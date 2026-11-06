@@ -179,7 +179,7 @@ var BANNER="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAwMDAgQDA
 var THEMES=DATA.THEMES,TYPES=DATA.TYPES,GRADES=DATA.GRADES,REF=DATA.REF,BANK=DATA.BANK;
 var ENDPOINT="https://script.google.com/macros/s/AKfycbyf-bc_nAI1Ticf1U7fwnzk958LHr-WNV_Jhupm0rz5xvi0Mi4tC1un5tniopdKRncwVA/exec";
 var app=document.getElementById('app');
-var S=null,best=null,mode='learn',timer=null;
+var S=null,best=null,mode='learn',timer=null,askRestart=false;
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function fmt(n){n=Math.round(n*100)/100;return (n%1===0?n.toFixed(1):String(n)).replace('.',',')}
 function mmss(s){var m=Math.floor(s/60),r=s%60;return (m<10?'0':'')+m+':'+(r<10?'0':'')+r}
@@ -197,13 +197,21 @@ function toggleTheme(){var n=curDark()?'light':'dark';document.documentElement.s
 function tbtn(){return '<button class="tbtn" data-act="theme" aria-label="Đổi giao diện sáng/tối">'+(curDark()?'☀':'☾')+'</button>'}
 try{var b=JSON.parse(ls('qd207_best')||'null');if(b&&typeof b.s==='number')best=b}catch(e){}
 
-function newSession(m,idxs){
- var qs=idxs.map(function(i){var b=BANK[i];return {i:i,b:b,opts:shuffle(b.o.map(function(t,k){return {t:t,ok:k===0}}))}});
- S={view:'quiz',mode:m,qs:qs,ans:{},flag:{},cur:0,t0:Date.now(),el:0,done:false,filter:'all',confirm:false};
- clearInterval(timer);timer=setInterval(function(){if(S&&S.view==='quiz'){S.el=Math.floor((Date.now()-S.t0)/1000);var e=document.getElementById('tm');if(e)e.textContent=mmss(S.el)}},1000);
+var PK='qd207_prog';
+function pk(m){return PK+'_'+(m==='exam'?'exam':'learn')}
+function saveProg(){if(!S||S.view!=='quiz')return;ls(pk(S.mode),JSON.stringify({v:1,mode:S.mode,idx:S.qs.map(function(q){return q.i}),p:S.qs.map(function(q){return q.p}),ans:S.ans,flag:S.flag,cur:S.cur,el:S.el,ts:Date.now()}))}
+function clearProg(m){try{localStorage.removeItem(pk(m))}catch(e){}}
+(function(){try{var o=localStorage.getItem(PK);if(o){var d=JSON.parse(o);if(d&&!localStorage.getItem(pk(d.mode)))localStorage.setItem(pk(d.mode),o);localStorage.removeItem(PK)}}catch(e){}})();
+function readProg(m){var raw=ls(pk(m));if(!raw)return null;try{var d=JSON.parse(raw);if(!d||d.v!==1||!Array.isArray(d.idx)||!d.idx.length||d.idx.length!==d.p.length)return null;
+ for(var n=0;n<d.idx.length;n++){var b=BANK[d.idx[n]];if(!b||!Array.isArray(d.p[n])||d.p[n].length!==b.o.length)return null;if(d.p[n].slice().sort(function(x,y){return x-y}).join()!==b.o.map(function(_,k){return k}).join())return null}
+ var ans={};Object.keys(d.ans||{}).forEach(function(k){var v=d.ans[k];if(+k>=0&&+k<d.idx.length&&v>=0&&v<d.p[+k].length)ans[k]=v});
+ d.ans=ans;d.flag=d.flag||{};d.cur=Math.min(Math.max(+d.cur||0,0),d.idx.length-1);d.el=Math.max(0,+d.el||0);d.mode=m==='exam'?'exam':'learn';return d}catch(e){return null}}
+function newSession(m,idxs,saved){
+ var qs=idxs.map(function(i,n){var b=BANK[i];var perm=saved?saved.p[n]:shuffle(b.o.map(function(_,k){return k}));return {i:i,p:perm,b:b,opts:perm.map(function(k){return {t:b.o[k],ok:k===0}})}});
+ S={view:'quiz',mode:m,qs:qs,ans:saved?saved.ans:{},flag:saved?saved.flag:{},cur:saved?saved.cur:0,t0:Date.now()-(saved?saved.el*1000:0),el:saved?saved.el:0,done:false,filter:'all',confirm:false};
+ clearInterval(timer);timer=setInterval(function(){if(S&&S.view==='quiz'){S.el=Math.floor((Date.now()-S.t0)/1000);var e=document.getElementById('tm');if(e)e.textContent=mmss(S.el);if(S.el%5===0)saveProg()}},1000);
  render();window.scrollTo(0,0);
-}
-function compute(){
+}function compute(){
  var n=S.qs.length,c=0,bl=0,th={},ty={};
  S.qs.forEach(function(q,k){var a=S.ans[k],ok=a!==undefined&&q.opts[a].ok;if(a===undefined)bl++;if(ok)c++;
   [[th,q.b.s],[ty,q.b.y]].forEach(function(p){var m=p[0],key=p[1];m[key]=m[key]||{n:0,c:0};m[key].n++;if(ok)m[key].c++})});
@@ -247,7 +255,12 @@ function viewStart(){
  h+='<div class="stats"><div class="stat"><b>40</b><small>tình huống</small></div><div class="stat"><b>19</b><small>điều trong Quy định</small></div><div class="stat"><b>7</b><small>nhóm nội dung</small></div><div class="stat"><b>10</b><small>điểm tối đa</small></div></div>';
  h+='<div class="modes"><button class="mode'+(mode==='learn'?' on':'')+'" data-act="mode" data-m="learn"><h3>📘 Chế độ học</h3><p>Chọn xong thấy ngay đáp án, giải thích và dòng “Cần nhớ”. Nên bắt đầu từ đây.</p></button>';
  h+='<button class="mode'+(mode==='exam'?' on':'')+'" data-act="mode" data-m="exam"><h3>📝 Thi thử</h3><p>Được đổi đáp án, đánh dấu câu cần xem lại; giải thích hiện sau khi nộp bài.</p></button></div>';
- h+='<button class="go" data-act="start">Bắt đầu làm bài →</button>';
+ var pg=readProg(mode),oth=readProg(mode==='exam'?'learn':'exam');
+ if(pg){var dn=Object.keys(pg.ans).length;h+='<div class="card" style="margin-bottom:12px;border:2px solid var(--gold)"><b>Bạn đang làm dở '+(mode==='exam'?'bài Thi thử':'bài ở Chế độ học')+'</b><p style="margin:4px 0 12px;color:var(--muted);font-size:14px">đã làm '+dn+'/'+pg.idx.length+' câu · đang ở câu '+(pg.cur+1)+' · '+mmss(pg.el)+'</p><button class="go" data-act="resume">Làm tiếp →</button></div><button class="btn" data-act="start" style="width:100%">Bắt đầu lại '+(mode==='exam'?'Thi thử':'Chế độ học')+' từ đầu (xóa tiến độ cũ)</button>'}
+ else h+='<button class="go" data-act="start">Bắt đầu làm bài →</button>';
+ if(oth)h+='<p class="privacy" style="margin-top:8px">ℹ️ Bạn còn một bài đang làm dở ở '+(mode==='exam'?'Chế độ học':'Thi thử')+' — bấm thẻ đó ở trên để làm tiếp.</p>';
+ h+='<p class="privacy" style="margin-top:8px">💾 Tiến độ làm bài tự động lưu trên thiết bị này, bạn có thể thoát ra và làm tiếp lần sau.</p>';
+ if(askRestart)h+='<div class="ov"><div class="card"><h3>Bắt đầu lại?</h3><p>Tiến độ đang lưu của '+(mode==='exam'?'Thi thử':'Chế độ học')+' sẽ bị xóa. Tiến độ của chế độ còn lại không bị ảnh hưởng.</p><div class="row"><button class="btn" data-act="rs_no">Giữ lại</button><button class="btn pri" data-act="rs_ok">Xóa và bắt đầu lại</button></div></div></div>';
  if(ENDPOINT)h+='<div style="margin-top:12px"><button class="btn" data-act="stats" style="width:100%">📊 Thống kê chung của chi bộ</button></div><p class="privacy">Kết quả khi làm đủ 40 câu được gửi ẩn danh (không ghi tên) để chi bộ tổng hợp, đánh giá chung.</p>';
  if(best)h+='<p class="best">Điểm cao nhất của bạn: <b>'+fmt(best.s)+'/10</b> ('+esc(best.g)+')</p>';
  h+='<details><summary>Đọc nhanh 19 điều</summary><ul class="refs">'+REF.map(function(r){return '<li><b>'+esc(r[0])+'.</b> '+esc(r[1])+'</li>'}).join('')+'</ul></details>';
@@ -327,7 +340,7 @@ function viewStats(){
  h+='<p class="best">Số liệu ẩn danh, cập nhật lúc '+esc(new Date(d.updated).toLocaleString('vi-VN'))+'.</p></div>';
  return h;
 }
-function render(){
+function render_(){
  var h=S===null||S.view==='start'?viewStart():S.view==='quiz'?viewQuiz():S.view==='stats'?viewStats():viewResult();
  app.innerHTML=h;
  if(S&&S.view==='stats'){setTimeout(function(){var ms=document.querySelectorAll('.mbar i');for(var i=0;i<ms.length;i++)ms[i].style.width=ms[i].getAttribute('data-w')+'%'},30)}
@@ -338,8 +351,9 @@ function render(){
   if(reduce){rn.textContent=fmt(r.score)}else{var t0=performance.now();(function step(t){var p=Math.min(1,(t-t0)/1000);rn.textContent=fmt(r.score*p);if(p<1)requestAnimationFrame(step);else rn.textContent=fmt(r.score)})(t0)}
  }
 }
+function render(){render_();if(S&&S.view==='quiz')saveProg()}
 function finish(){
- clearInterval(timer);S.el=Math.floor((Date.now()-S.t0)/1000);S.res=compute();S.view='result';S.confirm=false;
+ clearInterval(timer);S.el=Math.floor((Date.now()-S.t0)/1000);S.res=compute();S.view='result';S.confirm=false;clearProg(S.mode);
  if(S.qs.length===BANK.length){var g=gradeOf(S.res.score);if(!best||S.res.score>best.s){best={s:S.res.score,g:g.name};ls('qd207_best',JSON.stringify(best))}}
  if(S.qs.length===BANK.length&&ENDPOINT){var th={},ty={};['th','ty'].forEach(function(w){var src=S.res[w],dst=w==='th'?th:ty;Object.keys(src).forEach(function(k){dst[k]=[src[k].c,src[k].n]})});
   send({t:'result',mode:S.mode,score:S.res.score,c:S.res.c,n:S.res.n,secs:S.el,q:S.qs.map(function(q,k){var a=S.ans[k];return [q.i,a===undefined?-1:(q.opts[a].ok?1:0)]}),th:th,ty:ty});S.sent=true}
@@ -354,10 +368,14 @@ function goto(i){if(i<0||i>=S.qs.length)return;S.cur=i;render();window.scrollTo(
 app.addEventListener('click',function(e){
  var el=e.target.closest('[data-act]');if(!el)return;var a=el.getAttribute('data-act');
  if(a==='theme')return toggleTheme();
- if(a==='mode'){mode=el.getAttribute('data-m');return render()}
+ if(a==='mode'){mode=el.getAttribute('data-m');askRestart=false;return render()}
+ if(a==='rs_no'){askRestart=false;return render()}
+ if(a==='rs_ok'){askRestart=false;clearProg(mode);return newSession(mode,BANK.map(function(_,i){return i}))}
+ if(a==='resume'){var rd=readProg(mode);if(!rd){S=null;return render()}return newSession(rd.mode,rd.idx,rd)}
  if(a==='stats')return loadStats();
+ if(a==='start'&&readProg(mode)){askRestart=true;return render()}
  if(a==='start')return newSession(mode,BANK.map(function(_,i){return i}));
- if(a==='home'){if(S&&S.view==='quiz'&&Object.keys(S.ans).length&&!confirm('Thoát về trang đầu? Bài đang làm sẽ mất.'))return;clearInterval(timer);S=null;render();return window.scrollTo(0,0)}
+ if(a==='home'){if(S&&S.view==='quiz')saveProg();clearInterval(timer);S=null;render();return window.scrollTo(0,0)}
  if(!S)return;
  if(a==='opt')return pick(+el.getAttribute('data-j'));
  if(a==='go')return goto(+el.getAttribute('data-i'));
@@ -378,6 +396,8 @@ document.addEventListener('keydown',function(e){
  if(S.confirm)return;
  if(k==='arrowright')goto(S.cur+1);else if(k==='arrowleft')goto(S.cur-1);else if(k==='enter'&&S.mode==='learn'&&S.ans[S.cur]!==undefined&&S.cur<S.qs.length-1)goto(S.cur+1);
 });
+function flush(){if(S&&S.view==='quiz'){S.el=Math.floor((Date.now()-S.t0)/1000);saveProg()}}
+document.addEventListener('visibilitychange',function(){if(document.hidden)flush()});window.addEventListener('pagehide',flush);
 theme();pingVisit();
 var bt=document.getElementById('boot');if(bt)bt.parentNode.removeChild(bt);
 render();
