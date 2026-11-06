@@ -308,7 +308,7 @@ function viewResult(){
 }
 function loadStats(){
  S={view:'stats',st:null,err:null,loading:true};render();
- fetch(ENDPOINT+(ENDPOINT.indexOf('?')<0?'?':'&')+'action=stats&_='+Date.now()).then(function(r){return r.json()}).then(function(d){if(!d||!d.ok)throw 0;S.st=d;S.loading=false;render()}).catch(function(){S.err=true;S.loading=false;render()});
+ fetch(ENDPOINT+(ENDPOINT.indexOf('?')<0?'?':'&')+'action=stats&_='+Date.now()).then(function(r){S.http=r.status;return r.text()}).then(function(t){var d;try{d=JSON.parse(t)}catch(x){throw new Error('NOTJSON')}if(!d||!d.ok)throw new Error('NOTOK');S.st=d;S.loading=false;render()}).catch(function(er){S.err=true;S.why=(er&&er.message==='NOTJSON')?'Google trả về trang không phải dữ liệu (HTTP '+S.http+') – thường do triển khai chưa mở cho “Bất kỳ ai” hoặc mã script lỗi.':(er&&er.message==='NOTOK')?'Script trả về lỗi.':'Không kết nối được tới Google (trình duyệt trong ứng dụng có thể chặn) – thử mở bằng Chrome/Safari.';S.loading=false;render()});
 }
 function statsComment(d){
  var o=[],weak=[],bestK=null,bp=-1;
@@ -323,7 +323,7 @@ function statsComment(d){
 function viewStats(){
  var h='<div class="bar"><div class="wrap"><button class="tbtn" data-act="home" aria-label="Về trang đầu">⌂</button><div class="mid"><b>Thống kê chung</b></div>'+tbtn()+'<button class="btn sm" data-act="stats">Làm mới</button></div></div><div class="wrap" style="padding-top:18px;padding-bottom:40px">';
  if(S.loading)return h+'<div class="card">Đang tải số liệu…</div></div>';
- if(S.err)return h+'<div class="note">Chưa tải được số liệu thống kê. Kiểm tra kết nối mạng rồi bấm “Làm mới”.</div></div>';
+ if(S.err)return h+'<div class="note">Chưa tải được số liệu thống kê. Kiểm tra kết nối mạng rồi bấm “Làm mới”.<br><small>Chi tiết: '+esc(S.why||'')+'</small></div></div>';
  var d=S.st;
  h+='<div class="bigstat"><div class="stat"><b>'+d.visitors+'</b><small>người đã truy cập</small></div><div class="stat"><b>'+d.participants+'</b><small>người đã làm bài</small></div><div class="stat"><b>'+d.completions+'</b><small>lượt làm đủ 40 câu</small></div><div class="stat"><b>'+(d.completions?fmt(d.avg):'–')+'</b><small>điểm trung bình</small></div><div class="stat"><b>'+(d.completions?d.pass+'%':'–')+'</b><small>lượt đạt (từ 5 điểm)</small></div><div class="stat"><b>'+(d.completions?mmss(d.avgSecs):'–')+'</b><small>thời gian làm TB</small></div></div>';
  if(!d.completions)return h+'<div class="note">Chưa có ai làm đủ bài. Khi có kết quả, phần phân tích sẽ hiện ở đây.</div></div>';
